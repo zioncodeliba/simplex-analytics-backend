@@ -1,0 +1,12 @@
+services:
+  simplex-analytics-backend:
+    image: registry.webcase.me/node-projects/simplex-analytics/simplex-analytics-backend:Staging
+    container_name: simplex-analytics-backend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M

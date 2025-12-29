@@ -1,0 +1,24 @@
+services:
+  simplex-analytics-backend:
+    image: registry.webcase.me/node-projects/simplex-analytics/simplex-analytics-backend:Staging
+    container_name: simplex-analytics-backend
+    env_file:
+      - .env
+    networks:
+      - traefik-reverse-proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.simplex-analytics-backend.rule=Host(`simplex3d-backend.codeandcore.co.il`)
+      - traefik.http.services.simplex-analytics-backend.loadbalancer.server.port=5000
+      - traefik.http.middlewares.simplex-analytics-backend-proxy.headers.customRequestHeaders.X-Forwarded-For=Client-IP
+      - traefik.http.middlewares.simplex-analytics-backend-proxy.headers.customRequestHeaders.X-Real-IP=Client-IP
+      - traefik.http.routers.simplex-analytics-backend.middlewares=football-backend-proxy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+networks:
+  traefik-reverse-proxy:
+    external: true
