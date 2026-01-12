@@ -29,7 +29,9 @@ interface CustomRequest extends Request {
 }
 
 const unitDashboard = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { startDate, endDate } = req.query
   if (!userId) {
     return res.status(400).json({ message: 'Invalid User' })
@@ -131,7 +133,9 @@ const unitDashboard = async (req: CustomRequest, res: Response) => {
   }
 }
 const unitData = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { startDate, endDate } = req.query
 
   if (!userId) {
@@ -257,7 +261,9 @@ const unitData = async (req: CustomRequest, res: Response) => {
   }
 }
 const performanceChart = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { metrics, startDate, endDate } = req.query ?? { metrics: undefined }
   if (!userId) {
     return res.status(400).json({ message: 'Invalid User' })

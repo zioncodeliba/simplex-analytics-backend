@@ -13,7 +13,7 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ) => {
-  const statusCode = err.statusCode || 500
+  const statusCode = err.statusCode ?? 500
   const message = err.message || 'Internal Server Error'
 
   logger.error(`Error: ${message}`, {

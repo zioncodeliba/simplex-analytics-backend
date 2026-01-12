@@ -20,7 +20,9 @@ interface PerProjAggRow {
   uniqueReals: string[]
 }
 export const project_dashboard = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { startDate, endDate } = req.query
   if (!userId) {
     return res.status(400).json({ message: 'Invalid or missing user' })
@@ -118,7 +120,9 @@ export const project_dashboard = async (req: CustomRequest, res: Response) => {
   }
 }
 export const project_data = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { startDate, endDate } = req.query
   const limit = Number(req.query.limit) || 10
   const page = Number(req.query.page) || 1
@@ -282,7 +286,9 @@ export const project_data = async (req: CustomRequest, res: Response) => {
   }
 }
 export const PerformanceChart = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { metrics, startDate, endDate } = req.query
 
   if (!userId) {
@@ -320,12 +326,15 @@ export const PerformanceChart = async (req: CustomRequest, res: Response) => {
       select: 'realId realName',
     })
 
-    let metricsValues: Array<{ projectName?: string; value: number }> = []
+    let metricsValues: Array<{
+      projectName: string | undefined
+      value: number
+    }> = []
 
     // ✅ Step 3: Calculate metric based on query
     if (metrics === 'reals_count') {
       metricsValues = projects.map((proj) => ({
-        projectName: proj.projectName,
+        projectName: proj.projectName ?? undefined,
         value: proj.reals.length,
       }))
     }
@@ -369,7 +378,7 @@ export const PerformanceChart = async (req: CustomRequest, res: Response) => {
             openRate = Number(((openedCount / totalReals) * 100).toFixed(2))
           }
 
-          return { projectName: proj.projectName, value: openRate }
+          return { projectName: proj.projectName ?? '', value: openRate }
         })
       )
     }
@@ -411,7 +420,7 @@ export const PerformanceChart = async (req: CustomRequest, res: Response) => {
             totalVisits = result[0]?.total || 0
           }
 
-          return { projectName: proj.projectName, value: totalVisits }
+          return { projectName: proj.projectName ?? '', value: totalVisits }
         })
       )
     } else if (metrics === 'avg_time') {
@@ -468,10 +477,10 @@ export const PerformanceChart = async (req: CustomRequest, res: Response) => {
               },
             ])
 
-            avgTime = Number(result[0]?.avgTime || 0)
+            avgTime = Number(result[0]?.avgTime ?? 0)
           }
 
-          return { projectName: proj.projectName, value: avgTime }
+          return { projectName: proj.projectName ?? '', value: avgTime }
         })
       )
     }
@@ -490,7 +499,9 @@ export const PerformanceChart = async (req: CustomRequest, res: Response) => {
   }
 }
 export const engagement_Trends = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { metrics = 'visits', breakdown, startDate, endDate } = req.query
 
   if (!userId) {
@@ -588,7 +599,8 @@ export const engagement_Trends = async (req: CustomRequest, res: Response) => {
 
     // 5️⃣ Grouping type
 
-    let groupingType: 'day' | 'week' | 'month' | 'year' = 'day'
+    let groupingType: 'day' | 'week' | 'month' | 'year'
+
     if (diffDays <= 7) groupingType = 'day'
     else if (diffDays <= 45) groupingType = 'week'
     else if (diffDays <= 365) groupingType = 'month'
@@ -609,14 +621,15 @@ export const engagement_Trends = async (req: CustomRequest, res: Response) => {
 
     // 6️⃣  Date Format
 
-    const dateFormat =
-      groupingType === 'day'
-        ? '%Y-%m-%d'
-        : groupingType === 'week'
-          ? '%Y-%m-%d'
-          : groupingType === 'month'
-            ? '%Y-%m'
-            : '%Y'
+    let dateFormat: string
+
+    if (groupingType === 'day' || groupingType === 'week') {
+      dateFormat = '%Y-%m-%d'
+    } else if (groupingType === 'month') {
+      dateFormat = '%Y-%m'
+    } else {
+      dateFormat = '%Y'
+    }
 
     let trendData: Array<{ _id: string; value: number }> = []
 
@@ -680,10 +693,11 @@ export const engagement_Trends = async (req: CustomRequest, res: Response) => {
         )
 
         // ---- 2. Sort and keep only TOP 5 ----
-        const top5Projects = projectTotals
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 5)
-          .map((p) => p.projectId)
+        const sortedProjects = [...projectTotals].sort(
+          (a, b) => b.total - a.total
+        )
+
+        const top5Projects = sortedProjects.slice(0, 5).map((p) => p.projectId)
 
         // ---- 3. Prepare timeline buckets ----
         const buckets = generateTimeBuckets(start, end, groupingType)
@@ -896,9 +910,11 @@ export const engagement_Trends = async (req: CustomRequest, res: Response) => {
         )
 
         // Sort by totalValue descending and take top 5
-        const breakdownData = breakdownDataAll
-          .sort((a, b) => b.totalValue - a.totalValue)
-          .slice(0, 5)
+        const sortedBreakdownData = [...breakdownDataAll].sort(
+          (a, b) => b.totalValue - a.totalValue
+        )
+
+        const breakdownData = sortedBreakdownData.slice(0, 5)
 
         // ---------- build final table WITHOUT "All Projects" ----------
         const finalTable = buckets.map((bucket) => {

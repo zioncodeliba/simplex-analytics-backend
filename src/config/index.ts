@@ -7,9 +7,10 @@ export const config = {
   port: parseInt(process.env.PORT || '8000', 10),
   apiUrl: process.env.API_URL || 'http://localhost:3000',
   mongoUrl: process.env.MONGO_URL || 'bkkfjjbnvifkljbv',
+  clientApi: process.env.CLIENT_API,
   cors: {
-    origin: '*', // Allow all origins
-    credentials: false, // Required when using "*"
+    origin: 'http://localhost:3000', // Allow all origins
+    credentials: true, // Required when using "*"
   },
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes

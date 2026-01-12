@@ -1,37 +1,38 @@
-// import { Request, Response, NextFunction } from 'express'
-// import jwt from 'jsonwebtoken'
+import { Request, Response, NextFunction } from 'express'
+import UserModel from '../models/user.model'
 
-// export interface AuthenticatedRequest extends Request {
-//   user?: any
-// }
+export interface AuthenticatedRequest extends Request {
+  user?: { userId: string }
+}
 
-// export const authMiddleware = (
-//   req: AuthenticatedRequest,
-//   res: Response,
-//   next: NextFunction
-// ) => {
-//   try {
-//     const authHeader = req.headers['authorization'] // e.g. "Bearer <token>"
-//     const bearerToken =
-//       typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-//         ? authHeader.substring(7)
-//         : undefined
+export const authMiddleware = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const authHeader = req.headers['authorization']
+    const bearerToken =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.substring(7)
+        : undefined
 
-//     const cookieToken = (req as any).cookies?.['auth_token'] // cookie-parser added in server
-//     const token = bearerToken || cookieToken
-//     if (!token) {
-//       return res.status(401).json({ message: 'Unauthorized: token missing' })
-//     }
-
-//     const secret = process.env.JWT_SECRET
-//     if (!secret) {
-//       return res.status(500).json({ message: 'JWT secret not configured' })
-//     }
-
-//     const payload = jwt.verify(token, secret)
-//     req.user = payload
-//     return next()
-//   } catch {
-//     return res.status(401).json({ message: 'Unauthorized: invalid token' })
-//   }
-// }
+    const token = bearerToken
+    if (!token) {
+      return res.status(401).json({ message: 'Unauthorized: token missing' })
+    }
+    const localUser = await UserModel.findOne(
+      { authToken: token },
+      { userId: 1 }
+    ).lean()
+    if (!localUser) {
+      return res.status(401).json({ message: 'Unauthorized: user not found' })
+    }
+    req.user = {
+      userId: String(localUser.userId),
+    }
+    return next()
+  } catch {
+    return res.status(401).json({ message: 'Unauthorized: invalid token' })
+  }
+}

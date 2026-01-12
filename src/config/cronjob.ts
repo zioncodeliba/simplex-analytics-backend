@@ -9,6 +9,8 @@ import { PostHogEvent } from '../lib/type'
 import { logger } from '../utils/logger'
 import SlidePausedModel from '../models/posthog/slide_paused.model'
 import SlideResumedModel from '../models/posthog/slide_resumed.model'
+import drawerModel from '../models/posthog/drawer_interaction.model'
+import zoomModel from '../models/posthog/zoom_interaction.model'
 
 const PH_API = process.env.POSTHOG_API!
 const PH_KEY = process.env.POSTHOG_API_KEY!
@@ -25,16 +27,9 @@ interface PostHogApiResponse {
 
 export const startPosthogCron = async () => {
   logger.info('🚀 Starting PostHog Cron Jobs...')
-
-  // Run only PARTIAL SYNC on startup
   await safeRunner(runFullSync)
-
-  // Full sync every 12 hours
   cron.schedule('0 */12 * * *', () => safeRunner(runFullSync))
-
-  // Partial sync every 1 hour
   cron.schedule('0 * * * *', () => safeRunner(runPartialSync))
-
   logger.info('⏳ Cron jobs scheduled successfully!')
 }
 
@@ -58,13 +53,14 @@ async function safeRunner(fn: () => Promise<void>) {
   }
 }
 
-//  🟩 FULL SYNC
 const eventTypes = [
+  '$pageleave',
+  '$pageview',
+  'slide_viewed',
+  'zoom_interaction',
+  'drawer_interaction',
   'slide_resumed',
   'slide_paused',
-  '$pageleave',
-  'slide_viewed',
-  '$pageview',
 ]
 async function runFullSync() {
   logger.info('⏰ FULL SYNC STARTED')
@@ -76,7 +72,7 @@ async function runFullSync() {
   logger.info('🏁 FULL SYNC DONE.\n')
 }
 
-//🟦 PARTIAL SYNC (last 1 hour)
+// PARTIAL SYNC (last 1 hour)
 
 async function runPartialSync() {
   logger.info('⏰ PARTIAL SYNC STARTED')
@@ -88,7 +84,7 @@ async function runPartialSync() {
   logger.info('🏁 PARTIAL SYNC DONE.\n')
 }
 
-//  🔄 SYNC ENGINE (FULL + PARTIAL)
+//   SYNC ENGINE (FULL + PARTIAL)
 async function syncEventType(type: string, mode: 'full' | 'partial') {
   try {
     let nextUrl = `${PH_API}/events?event=${type}&limit=${FETCH_LIMIT}`
@@ -182,13 +178,16 @@ async function routeToHandler(type: string, events: PostHogEvent[]) {
       return chunkedBulkWrite(events, syncSlideViewedMapper, SliderViewedModel)
     case 'slide_resumed':
       return chunkedBulkWrite(events, syncSlideResumedMapper, SlideResumedModel)
-
+    case 'drawer_interaction':
+      return chunkedBulkWrite(events, syncDrawerInteractionMapper, drawerModel)
+    case 'zoom_interaction':
+      return chunkedBulkWrite(events, syncZoomInteractionMapper, zoomModel)
     default:
       logger.warn(`⚠ Unknown event type: ${type}`)
   }
 }
 
-// 🧩 DATA MAPPERS
+//  DATA MAPPERS
 
 function syncPageViewMapper(ev: PostHogEvent) {
   return {
@@ -316,8 +315,51 @@ function syncSlideResumedMapper(ev: PostHogEvent) {
     },
   }
 }
+function syncDrawerInteractionMapper(ev: PostHogEvent) {
+  return {
+    updateOne: {
+      filter: { event_id: ev.id },
+      update: {
+        $set: {
+          event_id: ev.id,
+          distinct_id: ev.distinct_id,
+          session_id: ev.properties?.$session_id,
+          time: new Date(ev.timestamp ?? Date.now()),
+          action: ev.properties?.action,
+          drawer_height: ev.properties?.drawer_height,
+          slide_id: ev.properties?.slide_id,
+          slide_index: ev.properties?.slide_index,
+          real_id: ev.properties?.real_id,
+        },
+      },
+      upsert: true,
+    },
+  }
+}
+function syncZoomInteractionMapper(ev: PostHogEvent) {
+  return {
+    updateOne: {
+      filter: { event_id: ev.id },
+      update: {
+        $set: {
+          event_id: ev.id,
+          distinct_id: ev.distinct_id,
+          session_id: ev.properties?.$session_id,
+          time: new Date(ev.timestamp ?? Date.now()),
+          slide_id: ev.properties?.slide_id,
+          slide_index: ev.properties?.slide_index,
+          real_id: ev.properties?.real_id,
+          action: ev.properties?.action,
+          zoom_scale: ev.properties?.zoom_scale,
+          slide_type: ev.properties?.slide_type ?? null,
+        },
+      },
+      upsert: true,
+    },
+  }
+}
 
-// 🧱 CHUNKED BULK WRITE (Production Safe)
+//  CHUNKED BULK WRITE (Production Safe)
 type BulkWritableModel = Pick<Model<unknown>, 'bulkWrite'>
 
 async function chunkedBulkWrite<TModel extends BulkWritableModel>(

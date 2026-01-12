@@ -6,12 +6,14 @@ import UserModel from '../models/user.model'
 import PageViewModel from '../models/posthog/pageview.model'
 // import PageLeaveModel from '../models/posthog/pageLeave.model'
 import sliderViewdModel from '../models/posthog/slide_viewed.model'
-import { Real, UserWithProjects } from '../lib/type'
+import { Drawer, Pause, Real, UserWithProjects, Zoom } from '../lib/type'
 import ProjectModel from '../models/project.model'
 import PageLeaveModel from '../models/posthog/pageLeave.model'
 import UnitModel from '../models/unit.model'
 import RealModel from '../models/reals'
 import SlidePausedModel from '../models/posthog/slide_paused.model'
+import drawerModel from '../models/posthog/drawer_interaction.model'
+import zoomModel from '../models/posthog/zoom_interaction.model'
 type PageviewAggregateStats = {
   realId: string
   totalVisits?: number
@@ -30,14 +32,15 @@ type BreakdownDataItem = { _id: string; value: number }
 type SlideSessionAggregate = { percentage: number }
 type PerUserRetentionRow = { realId: string; user: string; retention: number }
 type SlideDurationAggregate = { _id: string; totalDuration: number }
-// Narrow types used from embedded user document structure
 interface CustomRequest extends Request {
   user?: { userId: string | undefined; userType: string | undefined }
   query: { metrics?: string; limit: number; search?: string } & Request['query']
 }
 
 const real_Dashboard = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { startDate, endDate } = req.query
 
   if (!userId) {
@@ -45,7 +48,6 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
   }
 
   try {
-    // 1️⃣ Fetch user → projects → reals → units
     const userData = await UserModel.findOne({ userId })
       .select('projects')
       .populate({
@@ -66,7 +68,6 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
       return res.status(404).json({ message: 'User not found' })
     }
 
-    // 2️⃣ Flatten all reals
     const allReals = (userData.projects || []).flatMap((p) => p.reals || [])
     const realsCount = allReals.length
     let avgOpenRate = 0,
@@ -78,7 +79,6 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
       totalRealsOpened = 0
     if (realsCount > 0) {
       const allRealIds = allReals.map((r) => r.realId).filter(Boolean)
-      // -----------------------------
       const dateFilter: Record<string, Date> = {}
       if (startDate) dateFilter.$gte = new Date(startDate as string)
       if (endDate) dateFilter.$lte = new Date(endDate as string)
@@ -87,7 +87,6 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
         ? { time: dateFilter }
         : {}
 
-      // 3️⃣ Avg Open Rate
       const distinctOpenReals = await PageViewModel.distinct('realId', {
         realId: { $in: allRealIds },
         ...timeCondition,
@@ -95,20 +94,17 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
       totalRealsOpened = distinctOpenReals.length
       avgOpenRate = Number(((totalRealsOpened / realsCount) * 100).toFixed(2))
 
-      // 4️⃣ Total Visits
       totalVisits = await PageViewModel.countDocuments({
         realId: { $in: allRealIds },
         ...timeCondition,
       })
 
-      // 5️⃣ Distinct Visitors
       const distinctUsers = await PageViewModel.distinct('distinct_id', {
         realId: { $in: allRealIds },
         ...timeCondition,
       })
       distinctVisitors = distinctUsers.length
 
-      // 6️⃣ Avg Time per User (PageLeaveModel)
       const sessions = await PageLeaveModel.find(
         {
           real_id: { $in: allRealIds },
@@ -122,12 +118,10 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
         0
       )
 
-      // count
       const totalSessions = sessions.length
-      // average
+
       avgTimePerUser = totalSessions > 0 ? totalDuration / totalSessions : 0
 
-      // 8️⃣ Slides Retention (percentage of units viewed)
       const slideSessions =
         await sliderViewdModel.aggregate<SlideSessionAggregate>([
           {
@@ -167,8 +161,6 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
           },
         ])
 
-      // 3️⃣ Average Retention across all users
-
       if (slideSessions.length > 0) {
         const sum = slideSessions.reduce((acc, s) => acc + s.percentage, 0)
         slidesRetention = Number((sum / slideSessions.length).toFixed(2))
@@ -195,7 +187,9 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
   }
 }
 const Reals_Data = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const { startDate, endDate } = req.query
   if (!userId) {
     return res.status(400).json({ message: 'Invalid User' })
@@ -214,7 +208,6 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
   }
 
   try {
-    // 1️⃣ Fetch user's projects
     const user = await UserModel.findOne({ userId }).select('_id').lean()
     if (!user) return res.status(404).json({ message: 'User not found' })
 
@@ -235,7 +228,6 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
       projectDocs.map((p) => [p._id.toString(), p.projectName])
     )
 
-    // 2️⃣ Fetch REAL list (NO DATE FILTER HERE)
     const realMatch: FilterQuery<Real> = {
       project: { $in: projectDocs.map((p) => p._id) },
     }
@@ -267,7 +259,6 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
     const slidesMap = Object.fromEntries(
       unitsAgg.map((u) => [u._id.toString(), u.count])
     )
-
     // 4️⃣ PageViews (DATE FILTER APPLIED)
     const pageviewsAgg: PageviewAggregateStats[] =
       await PageViewModel.aggregate([
@@ -322,7 +313,7 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
     })
 
     Object.keys(avgTimeMap).forEach((id) => {
-      avgTimeMap[id] = (avgTimeMap[id] ?? 0) / (countMap[id] || 1)
+      avgTimeMap[id] = (avgTimeMap[id] ?? 0) / (countMap[id] ?? 1)
     })
 
     // 6️⃣ Per User Slide Retention (DATE FILTER APPLIED)
@@ -385,11 +376,75 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
       retentionMap[realId].push(retention)
     })
 
+    const interaction_pause: Pause[] = await SlidePausedModel.aggregate<Pause>([
+      {
+        $match: {
+          real_id: { $in: realIds },
+          pause_source: 'hold',
+        },
+      },
+      {
+        $group: {
+          _id: '$real_id',
+          hold_count: { $sum: 1 },
+        },
+      },
+    ])
+    const interaction_zoom: Zoom[] = await zoomModel.aggregate<Zoom>([
+      {
+        $match: {
+          real_id: { $in: realIds },
+          action: 'pinch_zoom',
+        },
+      },
+      {
+        $group: {
+          _id: '$real_id',
+          pinch_count: { $sum: 1 },
+        },
+      },
+    ])
+    const interaction_drawer: Drawer[] = await drawerModel.aggregate<Drawer>([
+      {
+        $match: {
+          real_id: { $in: realIds },
+          action: 'expanded',
+        },
+      },
+      {
+        $group: {
+          _id: '$real_id',
+          expanded_count: { $sum: 1 },
+        },
+      },
+    ])
+    function toLookupMap<T extends { _id: string }>(
+      arr: T[],
+      key: keyof T & (string | number | symbol)
+    ): Record<string, number> {
+      return arr.reduce(
+        (acc, e) => {
+          acc[e._id] = Number(e[key])
+          return acc
+        },
+        {} as Record<string, number>
+      )
+    }
+
+    const pausecount = toLookupMap(interaction_pause, 'hold_count')
+    const zoomcount = toLookupMap(interaction_zoom, 'pinch_count')
+    const drawercount = toLookupMap(interaction_drawer, 'expanded_count')
     // 7️⃣ Build FINAL Response
     const realsData = reals.map((r) => {
       const stats = statsMap[r.realId]
+      const hold = pausecount[r.realId] ?? 0
+      const zoom = zoomcount[r.realId] ?? 0
+      const drawer = drawercount[r.realId] ?? 0
 
-      const userRetentions = retentionMap[r.realId] || []
+      const interactions = hold + zoom + drawer
+
+      // const no = interaction_pause[r.realId]
+      const userRetentions = retentionMap[r.realId] ?? []
       const avgSlideRetention =
         userRetentions.length > 0
           ? Number(
@@ -410,6 +465,7 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
         slides: slidesMap[r._id.toString()] ?? 0,
         slidesRetention: avgSlideRetention,
         visits: stats?.totalVisits ?? 0,
+        interactions,
         uniqUsers: stats?.uniqueUserCount ?? 0,
         firstSeen: stats?.firstSeen ?? null,
         lastSeen: stats?.lastSeen ?? null,
@@ -431,7 +487,9 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
   }
 }
 const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
-  const { userId = 'user_004' } = req.user ?? { userId: undefined }
+  const { userId } = req.user ?? {
+    userId: undefined,
+  }
   const {
     metrics = 'reals_opened',
     breakdown,
@@ -500,15 +558,15 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
     }
 
     // 6️⃣ Date format pattern
-    const dateFormat =
-      groupingType === 'day'
-        ? '%Y-%m-%d'
-        : groupingType === 'week'
-          ? '%Y-%m-%d'
-          : groupingType === 'month'
-            ? '%Y-%m'
-            : '%Y'
+    let dateFormat: string
 
+    if (groupingType === 'day' || groupingType === 'week') {
+      dateFormat = '%Y-%m-%d'
+    } else if (groupingType === 'month') {
+      dateFormat = '%Y-%m'
+    } else {
+      dateFormat = '%Y'
+    }
     let trendData: TrendDataItem[] | Record<string, string | number>[] = []
 
     // 7️⃣ Time bucket generator
@@ -669,7 +727,7 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
               realName: string
             }
             row[realData.realName] =
-              realData.data.find((d) => d._id === bucket)?.value || 0
+              realData.data.find((d) => d._id === bucket)?.value ?? 0
           })
           return row
         })
@@ -718,10 +776,9 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
           })
         )
 
-        const top5Reals = realTotals
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 5)
-          .map((r) => r.realId)
+        const sortedReals = [...realTotals].sort((a, b) => b.total - a.total)
+
+        const top5Reals = sortedReals.slice(0, 5).map((r) => r.realId)
 
         const breakdownData = await Promise.all(
           top5Reals.map(async (realId) => {
@@ -786,7 +843,7 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
               realName: string
             }
             row[realData.realName] =
-              realData.data.find((d) => d._id === bucket)?.value || 0
+              realData.data.find((d) => d._id === bucket)?.value ?? 0
           })
           return row
         })
@@ -882,7 +939,7 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
               realName: string
             }
             row[userData?.userId] =
-              userData.data.find((d) => d._id === bucket)?.value || 0
+              userData.data.find((d) => d._id === bucket)?.value ?? 0
           })
           return row
         })
@@ -930,6 +987,16 @@ const popupSliders = async (req: CustomRequest, res: Response) => {
       { $match: { slide_id: { $in: slideIds } } },
       { $group: { _id: '$slide_id', count: { $sum: 1 } } },
     ])
+    const drawerClosedCounts = await drawerModel.aggregate([
+      { $match: { slide_id: { $in: slideIds }, action: 'closed' } },
+      {
+        $group: {
+          _id: '$slide_id',
+          closedCount: { $sum: 1 },
+        },
+      },
+    ])
+
     const durationMap: Record<string, number> = {}
     durations.forEach((d) => {
       durationMap[d._id] = d.totalDuration
@@ -938,13 +1005,17 @@ const popupSliders = async (req: CustomRequest, res: Response) => {
     pausedCounts.forEach((p: { _id: string; count: number }) => {
       pausedMap[p._id] = p.count
     })
-
+    const drawerClosedMap: Record<string, number> = {}
+    drawerClosedCounts.forEach((d: { _id: string; closedCount: number }) => {
+      drawerClosedMap[d._id] = d.closedCount
+    })
     // 4️⃣ Merge back
     const result = slides.map((slide) => ({
       slideId: slide.unitId,
       slideName: slide.unitName,
       timeSpent: durationMap[slide.unitId] ?? 0,
       numberOfPauses: pausedMap[slide.unitId] ?? 0,
+      drawerClosed: drawerClosedMap[slide.unitId] ?? 0,
     }))
 
     return res.status(200).json({ message: 'Slides Fetched', result })

@@ -92,6 +92,10 @@ export interface PostHogEvent {
     previous_pause_source: string
     pause_source: string
 
+    action: string
+    drawer_height?: number
+
+    zoom_scale: number
     from?: {
       _id?: string
       title?: string
@@ -110,4 +114,18 @@ export interface PostHogEvent {
       real_id?: string
     }
   }
+}
+export interface Pause {
+  _id: string // real_id
+  hold_count: number
+}
+
+export interface Zoom {
+  _id: string // real_id
+  pinch_count: number
+}
+
+export interface Drawer {
+  _id: string // real_id
+  expanded_count: number
 }
