@@ -16,15 +16,12 @@ const PH_API = process.env.POSTHOG_API!
 const PH_KEY = process.env.POSTHOG_API_KEY!
 const FETCH_LIMIT = 500
 
-// prevent overlap
 let isRunning = false
 
 interface PostHogApiResponse {
   results: PostHogEvent[]
   next?: string
 }
-// 🚀 START CRON JOBS
-
 export const startPosthogCron = async () => {
   logger.info('🚀 Starting PostHog Cron Jobs...')
   await safeRunner(runFullSync)
@@ -72,8 +69,6 @@ async function runFullSync() {
   logger.info('🏁 FULL SYNC DONE.\n')
 }
 
-// PARTIAL SYNC (last 1 hour)
-
 async function runPartialSync() {
   logger.info('⏰ PARTIAL SYNC STARTED')
 
@@ -84,7 +79,6 @@ async function runPartialSync() {
   logger.info('🏁 PARTIAL SYNC DONE.\n')
 }
 
-//   SYNC ENGINE (FULL + PARTIAL)
 async function syncEventType(type: string, mode: 'full' | 'partial') {
   try {
     let nextUrl = `${PH_API}/events?event=${type}&limit=${FETCH_LIMIT}`
@@ -113,7 +107,7 @@ async function syncEventType(type: string, mode: 'full' | 'partial') {
       nextUrl = response?.next ?? ''
       page++
 
-      if (nextUrl) await wait(350) // rate-control
+      if (nextUrl) await wait(350)
     }
 
     logger.info(
@@ -124,7 +118,6 @@ async function syncEventType(type: string, mode: 'full' | 'partial') {
   }
 }
 
-// 🔁 RATE-LIMIT + SERVER ERROR SAFE API REQUEST
 async function retryRequest(url: string) {
   let attempt = 0
 
@@ -141,7 +134,6 @@ async function retryRequest(url: string) {
 
       let status: number | undefined = undefined
 
-      // ✅ Type-safe Axios error detection
       if (axios.isAxiosError(err)) {
         status = err.response?.status
       }
@@ -162,8 +154,6 @@ async function retryRequest(url: string) {
 
   throw new Error('❌ PostHog API failed after 6 retries')
 }
-
-// 🔀 EVENT ROUTER
 async function routeToHandler(type: string, events: PostHogEvent[]) {
   switch (type) {
     case 'slide_paused':
@@ -186,9 +176,6 @@ async function routeToHandler(type: string, events: PostHogEvent[]) {
       logger.warn(`⚠ Unknown event type: ${type}`)
   }
 }
-
-//  DATA MAPPERS
-
 function syncPageViewMapper(ev: PostHogEvent) {
   return {
     updateOne: {
@@ -358,8 +345,6 @@ function syncZoomInteractionMapper(ev: PostHogEvent) {
     },
   }
 }
-
-//  CHUNKED BULK WRITE (Production Safe)
 type BulkWritableModel = Pick<Model<unknown>, 'bulkWrite'>
 
 async function chunkedBulkWrite<TModel extends BulkWritableModel>(
@@ -382,6 +367,4 @@ async function chunkedBulkWrite<TModel extends BulkWritableModel>(
     await wait(50)
   }
 }
-
-//  💤 WAIT
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
