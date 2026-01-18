@@ -1,5 +1,5 @@
 import app from './app'
-import { startPosthogCron } from './config/cronjob'
+// import { startPosthogCron } from './config/cronjob'
 import { config } from './config/index'
 
 import connectDB from './config/mongodb'
@@ -11,8 +11,8 @@ const startServer = async () => {
   try {
     await connectDB(config.mongoUrl)
 
-    const server = app.listen(PORT, async () => {
-      await startPosthogCron()
+    const server = app.listen(PORT, () => {
+      // await startPosthogCron()
       logger.info(`🚀 Server is running on port ${PORT}`)
       logger.info(`📝 Environment: ${config.nodeEnv}`)
     })
