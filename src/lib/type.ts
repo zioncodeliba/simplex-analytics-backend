@@ -91,7 +91,7 @@ export interface PostHogEvent {
     remaining_time_ms: string
     previous_pause_source: string
     pause_source: string
-
+    asset_delay: number | null
     action: string
     drawer_height?: number
 

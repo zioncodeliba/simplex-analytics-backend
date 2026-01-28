@@ -11,16 +11,15 @@ export const authMiddleware = async (
   next: NextFunction
 ) => {
   try {
-    const authHeader = req.headers['authorization']
-    const bearerToken =
-      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-        ? authHeader.substring(7)
-        : undefined
+    const getCookieString = (cookie: unknown): string | undefined =>
+      typeof cookie === 'string' ? cookie : undefined
 
-    const token = bearerToken
+    //  token from httpOnly cookie
+    const token = getCookieString(req.cookies?.access_token)
     if (!token) {
       return res.status(401).json({ message: 'Unauthorized: token missing' })
     }
+
     const localUser = await UserModel.findOne(
       { authToken: token },
       { userId: 1 }
@@ -28,9 +27,11 @@ export const authMiddleware = async (
     if (!localUser) {
       return res.status(401).json({ message: 'Unauthorized: user not found' })
     }
+
     req.user = {
       userId: String(localUser.userId),
     }
+
     return next()
   } catch {
     return res.status(401).json({ message: 'Unauthorized: invalid token' })

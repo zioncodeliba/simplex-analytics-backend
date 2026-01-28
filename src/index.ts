@@ -1,5 +1,6 @@
 import app from './app'
-// import { startPosthogCron } from './config/cronjob'
+import { startAdminCron } from './config/adminCorn'
+import { startPosthogCron } from './config/cronjob'
 import { config } from './config/index'
 
 import connectDB from './config/mongodb'
@@ -11,8 +12,15 @@ const startServer = async () => {
   try {
     await connectDB(config.mongoUrl)
 
-    const server = app.listen(PORT, () => {
-      // await startPosthogCron()
+    const server = app.listen(PORT, async () => {
+      try {
+        logger.info('🔄 Starting cron jobs sequentially...')
+        await startPosthogCron()
+        await startAdminCron()
+        logger.info('✅ All cron jobs started successfully')
+      } catch (error) {
+        logger.error('❌ Error starting cron jobs:', error)
+      }
       logger.info(`🚀 Server is running on port ${PORT}`)
       logger.info(`📝 Environment: ${config.nodeEnv}`)
     })

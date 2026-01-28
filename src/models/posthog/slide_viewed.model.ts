@@ -14,6 +14,7 @@ const sliderViewed = new mongoose.Schema(
     project_id: { type: String },
     session_duration_seconds: { type: String },
     session_duration_formatted: { type: String },
+    duration: { type: Number },
     time: { type: Date },
   },
   { versionKey: false, timestamps: true }

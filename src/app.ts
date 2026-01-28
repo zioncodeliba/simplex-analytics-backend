@@ -3,6 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
 import morgan from 'morgan'
+import cookieParser from 'cookie-parser'
 // import { rateLimiter } from './middlewares/rateLimiter'
 import loginRouter from './routes/login.route'
 import projectRouter from './routes/project.route'
@@ -18,12 +19,19 @@ const app: Application = express()
 
 // Security middleware
 app.use(helmet())
-app.use(cors(config.cors))
+const corsConfig = {
+  origin: [
+    'http://localhost:3000',
+    'https://simplex3d-frontend.codeandcore.co.il',
+  ],
+  credentials: true,
+}
+app.use(cors(corsConfig))
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
-
+app.use(cookieParser())
 // Compression middleware
 app.use(compression())
 
@@ -53,7 +61,7 @@ app.get('/health', (_req: Request, res: Response) => {
 })
 
 // API routes
-app.use('/api', loginRouter)
+app.use('/auth', loginRouter)
 app.use('/external-auth', authrouter)
 app.use('/project', projectRouter)
 app.use('/reals', realsRouter)

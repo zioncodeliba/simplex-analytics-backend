@@ -15,11 +15,10 @@ const realSchema = new mongoose.Schema(
         required: true,
       },
     ],
-
-    // 👇 add reference to units
+    total_duration: { type: Number, default: 0 },
     units: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Unit' }],
   },
-  { timestamps: true }
+  { timestamps: true, versionkey: false }
 )
 
 export const RealModel = mongoose.model('Real', realSchema)

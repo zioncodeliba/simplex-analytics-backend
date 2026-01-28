@@ -32,6 +32,14 @@ type BreakdownDataItem = { _id: string; value: number }
 type SlideSessionAggregate = { percentage: number }
 type PerUserRetentionRow = { realId: string; user: string; retention: number }
 type SlideDurationAggregate = { _id: string; totalDuration: number }
+type TimeRetentionRow = {
+  _id: {
+    real_id: string
+    session_id: string
+  }
+  time_spent_ms: number
+}
+
 interface CustomRequest extends Request {
   user?: { userId: string | undefined; userType: string | undefined }
   query: { metrics?: string; limit: number; search?: string } & Request['query']
@@ -75,7 +83,7 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
       distinctVisitors = 0,
       avgTimePerUser = 0,
       slidesRetention = 0,
-      // avgTimeRetention = 0,
+      avgTimeRetention = 0,
       totalRealsOpened = 0
     if (realsCount > 0) {
       const allRealIds = allReals.map((r) => r.realId).filter(Boolean)
@@ -165,6 +173,55 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
         const sum = slideSessions.reduce((acc, s) => acc + s.percentage, 0)
         slidesRetention = Number((sum / slideSessions.length).toFixed(2))
       }
+      const realsDurationMap = new Map<string, number>()
+
+      const realsWithDuration = await RealModel.find(
+        { realId: { $in: allRealIds } },
+        { realId: 1, total_duration: 1, _id: 0 }
+      ).lean()
+
+      realsWithDuration.forEach((r) => {
+        realsDurationMap.set(r.realId, Number(r.total_duration || 0))
+      })
+      const timeRetentionRows =
+        await PageLeaveModel.aggregate<TimeRetentionRow>([
+          {
+            $match: {
+              real_id: { $in: allRealIds },
+              prev_pageview_duration: { $gt: 0 },
+              ...(Object.keys(dateFilter).length ? { time: dateFilter } : {}),
+            },
+          },
+          {
+            $group: {
+              _id: {
+                real_id: '$real_id',
+                session_id: '$session.id',
+              },
+              time_spent_ms: { $sum: '$prev_pageview_duration' },
+            },
+          },
+        ])
+      let retentionSum = 0
+      let retentionCount = 0
+
+      for (const row of timeRetentionRows) {
+        const realId = row._id.real_id
+        const timeSpentSec = row.time_spent_ms / 1000
+        const totalDuration = realsDurationMap.get(realId) || 0
+
+        if (totalDuration > 0) {
+          const cappedTime = Math.min(timeSpentSec, totalDuration)
+
+          retentionSum += cappedTime / totalDuration
+          retentionCount++
+        }
+      }
+
+      avgTimeRetention =
+        retentionCount > 0
+          ? Number(((retentionSum / retentionCount) * 100).toFixed(2))
+          : 0
     }
 
     const data = {
@@ -175,7 +232,7 @@ const real_Dashboard = async (req: CustomRequest, res: Response) => {
       distinctVisitors,
       avgTimePerUser,
       slidesRetention,
-      avgTimeRetention: 0,
+      avgTimeRetention,
     }
 
     return res.status(200).json({
@@ -353,7 +410,9 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
                 0,
                 {
                   $multiply: [
-                    { $divide: ['$viewedCount', '$totalSlides'] },
+                    {
+                      $min: [{ $divide: ['$viewedCount', '$totalSlides'] }, 1],
+                    },
                     100,
                   ],
                 },
@@ -431,6 +490,60 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
       )
     }
 
+    const realsWithDuration = await RealModel.find(
+      { realId: { $in: realIds } },
+      { realId: 1, total_duration: 1, _id: 0 }
+    ).lean()
+
+    const totalDurationMap = new Map<string, number>()
+    realsWithDuration.forEach((r) => {
+      totalDurationMap.set(r.realId, Number(r.total_duration || 0))
+    })
+
+    type ATRRow = {
+      realId: string
+      sessionId: string
+      timeSpentSec: number
+    }
+
+    const atrRows: ATRRow[] = []
+
+    sessions.forEach((s) => {
+      const realId = s.real_id
+      const sessionId = s.session?.id
+      if (!realId || !sessionId) return
+
+      const timeSpentSec = (s.prev_pageview_duration ?? 0) / 1000
+      if (timeSpentSec <= 0) return
+
+      atrRows.push({ realId, sessionId, timeSpentSec })
+    })
+
+    // 5.c️⃣ Compute Avg Time Retention per real
+    const atrMap: Record<string, number> = {}
+
+    const groupedByReal = atrRows.reduce(
+      (acc, row) => {
+        if (!acc[row.realId]) acc[row.realId] = []
+        acc[row?.realId]?.push(row.timeSpentSec)
+        return acc
+      },
+      {} as Record<string, number[]>
+    )
+
+    Object.entries(groupedByReal).forEach(([realId, times]) => {
+      const totalDuration = totalDurationMap.get(realId) ?? 0
+      if (totalDuration <= 0) {
+        atrMap[realId] = 0
+        return
+      }
+
+      const sumRatio =
+        times.reduce((a, b) => a + Math.min(b, totalDuration), 0) /
+        totalDuration
+      atrMap[realId] = Number(((sumRatio / times.length) * 100).toFixed(2))
+    })
+
     const pausecount = toLookupMap(interaction_pause, 'hold_count')
     const zoomcount = toLookupMap(interaction_zoom, 'pinch_count')
     const drawercount = toLookupMap(interaction_drawer, 'expanded_count')
@@ -466,10 +579,12 @@ const Reals_Data = async (req: CustomRequest, res: Response) => {
         slidesRetention: avgSlideRetention,
         visits: stats?.totalVisits ?? 0,
         interactions,
+        totalDuration: r?.total_duration ?? 0,
         uniqUsers: stats?.uniqueUserCount ?? 0,
         firstSeen: stats?.firstSeen ?? null,
         lastSeen: stats?.lastSeen ?? null,
         currentUrl: stats?.current_url ?? null,
+        avgTimeRetention: atrMap[r.realId] ?? 0,
         // sharingTitle: r.sharingTitle ?? 'N/A',
       }
     })
@@ -521,7 +636,6 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
       .flatMap((p) => p.reals || [])
       .map((r) => r.realId)
       .filter((id): id is string => typeof id === 'string' && id.length > 0)
-
     if (!allRealIds.length) {
       return res.status(200).json({ message: 'No Reals Found', data: [] })
     }
@@ -726,7 +840,9 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
               data: BreakdownDataItem[]
               realName: string
             }
-            row[realData.realName] =
+            const safeName =
+              realData.realName?.trim() || `Real-${real.realId.slice(-4)}`
+            row[safeName] =
               realData.data.find((d) => d._id === bucket)?.value ?? 0
           })
           return row
@@ -824,7 +940,6 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
               _id: b,
               value: map[b] ?? 0,
             }))
-
             return {
               realId,
               realName: realUrlDoc?.realName ?? 'N/A',
@@ -836,15 +951,13 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
         // Build final table
         trendData = buckets.map((bucket) => {
           const row: Record<string, string | number> = { date: bucket }
+
           breakdownData.forEach((real) => {
-            const realData = real as {
-              realId: string
-              data: BreakdownDataItem[]
-              realName: string
-            }
-            row[realData.realName] =
-              realData.data.find((d) => d._id === bucket)?.value ?? 0
+            const safeName =
+              real.realName?.trim() || `Real-${real.realId.slice(-4)}`
+            row[safeName] = real.data.find((d) => d._id === bucket)?.value ?? 0
           })
+
           return row
         })
       }
@@ -938,7 +1051,9 @@ const REALS_UsageTrends = async (req: CustomRequest, res: Response) => {
               data: BreakdownDataItem[]
               realName: string
             }
-            row[userData?.userId] =
+            const safeName =
+              userData.realName?.trim() || `Real-${userData.userId.slice(-4)}`
+            row[safeName] =
               userData.data.find((d) => d._id === bucket)?.value ?? 0
           })
           return row

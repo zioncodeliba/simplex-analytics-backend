@@ -46,7 +46,7 @@ node-express/
 
 ## Prerequisites
 
-- Node.js 22+ or Bun
+- Node.js 22
 - npm/yarn/pnpm/bun
 - Docker (optional, for containerization)
 - Git
@@ -92,7 +92,7 @@ CORS_ORIGIN=*
 # Start development server with hot reload
 npm run dev
 
-# The API will be available at http://localhost:3000
+# The API will be available at http://localhost:8000
 ```
 
 ### 4. Building
@@ -107,21 +107,21 @@ npm start
 
 ## Available Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Build TypeScript to JavaScript |
-| `npm start` | Start production server |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Fix ESLint errors automatically |
-| `npm run format` | Format code with Prettier |
-| `npm run type-check` | Check TypeScript types |
-| `npm test` | Run tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Generate test coverage report |
-| `npm run validate` | Run all checks (type-check, lint, format, build) |
-| `npm run sonar` | Run SonarQube analysis |
-| `npm run cz` | Commit with Commitizen |
+| Command                 | Description                                      |
+| ----------------------- | ------------------------------------------------ |
+| `npm run dev`           | Start development server with hot reload         |
+| `npm run build`         | Build TypeScript to JavaScript                   |
+| `npm start`             | Start production server                          |
+| `npm run lint`          | Run ESLint                                       |
+| `npm run lint:fix`      | Fix ESLint errors automatically                  |
+| `npm run format`        | Format code with Prettier                        |
+| `npm run type-check`    | Check TypeScript types                           |
+| `npm test`              | Run tests                                        |
+| `npm run test:watch`    | Run tests in watch mode                          |
+| `npm run test:coverage` | Generate test coverage report                    |
+| `npm run validate`      | Run all checks (type-check, lint, format, build) |
+| `npm run sonar`         | Run SonarQube analysis                           |
+| `npm run cz`            | Commit with Commitizen                           |
 
 ## API Endpoints
 
@@ -141,19 +141,6 @@ GET    /api/examples/:id   # Get example by ID
 POST   /api/examples       # Create new example
 PUT    /api/examples/:id   # Update example
 DELETE /api/examples/:id   # Delete example
-```
-
-## Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Generate coverage report
-npm run test:coverage
 ```
 
 ## Docker
@@ -222,11 +209,13 @@ Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
 ```
 
 Example:
+
 ```bash
 git commit -m "feat: add user authentication endpoint"
 ```
 
 Or use Commitizen:
+
 ```bash
 npm run cz
 ```
@@ -253,15 +242,15 @@ The project includes a GitLab CI/CD pipeline with:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NODE_ENV` | Environment (development/production) | `development` |
-| `PORT` | Server port | `3000` |
-| `API_URL` | API base URL | `http://localhost:3000` |
-| `CORS_ORIGIN` | CORS allowed origins | `*` |
-| `RATE_LIMIT_WINDOW_MS` | Rate limit window in ms | `900000` |
-| `RATE_LIMIT_MAX_REQUESTS` | Max requests per window | `100` |
-| `LOG_LEVEL` | Logging level | `info` |
+| Variable                  | Description                          | Default                 |
+| ------------------------- | ------------------------------------ | ----------------------- |
+| `NODE_ENV`                | Environment (development/production) | `development`           |
+| `PORT`                    | Server port                          | `3000`                  |
+| `API_URL`                 | API base URL                         | `http://localhost:3000` |
+| `CORS_ORIGIN`             | CORS allowed origins                 | `*`                     |
+| `RATE_LIMIT_WINDOW_MS`    | Rate limit window in ms              | `900000`                |
+| `RATE_LIMIT_MAX_REQUESTS` | Max requests per window              | `100`                   |
+| `LOG_LEVEL`               | Logging level                        | `info`                  |
 
 ## Best Practices
 
@@ -297,7 +286,11 @@ export default router
 // src/controllers/user.controller.ts
 import { Request, Response, NextFunction } from 'express'
 
-export const getUsers = async (req: Request, res: Response, next: NextFunction) => {
+export const getUsers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     // Your logic here
     res.status(200).json({ success: true, data: [] })

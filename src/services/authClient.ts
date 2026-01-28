@@ -1,6 +1,16 @@
 import axios from 'axios'
 import { config } from '../config'
 
+type GetRealsResponse = {
+  reals: ExternalReal[]
+  pagination: {
+    total: number
+    limit: number
+    offset: number
+    hasMore: boolean
+  }
+}
+
 export interface ExternalUser {
   _id: string
   name: string
@@ -48,13 +58,17 @@ export async function getProjects(
 }
 
 export async function getReals(
-  accessToken: string
-): Promise<ExternalReal[] | { reals: ExternalReal[] }> {
-  const res = await axios.get<ExternalReal[] | { reals: ExternalReal[] }>(
+  accessToken: string,
+  offset = 0,
+  limit = 500
+): Promise<GetRealsResponse> {
+  const res = await axios.get<GetRealsResponse>(
     `${config.clientApi}/api/auth/bff/reals`,
     {
+      params: { limit, offset },
       headers: { Authorization: `Bearer ${accessToken}` },
     }
   )
+
   return res.data
 }

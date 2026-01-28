@@ -11,20 +11,19 @@ import SlidePausedModel from '../models/posthog/slide_paused.model'
 import SlideResumedModel from '../models/posthog/slide_resumed.model'
 import drawerModel from '../models/posthog/drawer_interaction.model'
 import zoomModel from '../models/posthog/zoom_interaction.model'
+import { acquireCronLock, releaseCronLock } from './cronLock'
+import { syncRealDurations } from '../services/realsTotalDuration'
 
 const PH_API = process.env.POSTHOG_API!
 const PH_KEY = process.env.POSTHOG_API_KEY!
 const FETCH_LIMIT = 500
 
-// prevent overlap
 let isRunning = false
 
 interface PostHogApiResponse {
   results: PostHogEvent[]
   next?: string
 }
-// 🚀 START CRON JOBS
-
 export const startPosthogCron = async () => {
   logger.info('🚀 Starting PostHog Cron Jobs...')
   await safeRunner(runFullSync)
@@ -35,7 +34,13 @@ export const startPosthogCron = async () => {
 
 async function safeRunner(fn: () => Promise<void>) {
   if (isRunning) {
-    logger.warn('⛔ Skipped job: another sync is still running')
+    logger.warn('⛔ Skipped job: another PostHog sync is still running')
+    return
+  }
+
+  // Check shared lock to prevent running with other cron jobs
+  if (!acquireCronLock()) {
+    logger.warn('⛔ PostHog Cron: Skipped - another cron job is running')
     return
   }
 
@@ -50,13 +55,14 @@ async function safeRunner(fn: () => Promise<void>) {
     logger.error(`❌ ERROR in ${name}`, err)
   } finally {
     isRunning = false
+    releaseCronLock()
   }
 }
 
 const eventTypes = [
+  'slide_viewed',
   '$pageleave',
   '$pageview',
-  'slide_viewed',
   'zoom_interaction',
   'drawer_interaction',
   'slide_resumed',
@@ -68,11 +74,10 @@ async function runFullSync() {
   for (const type of eventTypes) {
     await syncEventType(type, 'full')
   }
+  await syncRealDurations()
 
   logger.info('🏁 FULL SYNC DONE.\n')
 }
-
-// PARTIAL SYNC (last 1 hour)
 
 async function runPartialSync() {
   logger.info('⏰ PARTIAL SYNC STARTED')
@@ -84,7 +89,6 @@ async function runPartialSync() {
   logger.info('🏁 PARTIAL SYNC DONE.\n')
 }
 
-//   SYNC ENGINE (FULL + PARTIAL)
 async function syncEventType(type: string, mode: 'full' | 'partial') {
   try {
     let nextUrl = `${PH_API}/events?event=${type}&limit=${FETCH_LIMIT}`
@@ -96,7 +100,6 @@ async function syncEventType(type: string, mode: 'full' | 'partial') {
 
     let total = 0
     let page = 1
-
     while (nextUrl) {
       const response = await retryRequest(nextUrl)
       const events = response?.results || []
@@ -112,8 +115,7 @@ async function syncEventType(type: string, mode: 'full' | 'partial') {
 
       nextUrl = response?.next ?? ''
       page++
-
-      if (nextUrl) await wait(350) // rate-control
+      if (nextUrl) await wait(350)
     }
 
     logger.info(
@@ -124,7 +126,6 @@ async function syncEventType(type: string, mode: 'full' | 'partial') {
   }
 }
 
-// 🔁 RATE-LIMIT + SERVER ERROR SAFE API REQUEST
 async function retryRequest(url: string) {
   let attempt = 0
 
@@ -141,7 +142,6 @@ async function retryRequest(url: string) {
 
       let status: number | undefined = undefined
 
-      // ✅ Type-safe Axios error detection
       if (axios.isAxiosError(err)) {
         status = err.response?.status
       }
@@ -162,8 +162,6 @@ async function retryRequest(url: string) {
 
   throw new Error('❌ PostHog API failed after 6 retries')
 }
-
-// 🔀 EVENT ROUTER
 async function routeToHandler(type: string, events: PostHogEvent[]) {
   switch (type) {
     case 'slide_paused':
@@ -186,9 +184,6 @@ async function routeToHandler(type: string, events: PostHogEvent[]) {
       logger.warn(`⚠ Unknown event type: ${type}`)
   }
 }
-
-//  DATA MAPPERS
-
 function syncPageViewMapper(ev: PostHogEvent) {
   return {
     updateOne: {
@@ -197,10 +192,10 @@ function syncPageViewMapper(ev: PostHogEvent) {
         $set: {
           id: ev.id,
           distinct_id: ev.distinct_id,
-          current_url: ev.properties.$current_url,
-          realId: ev.properties.$pathname?.slice(6),
-          session_id: ev.properties.$session_id,
-          time: Math.floor(new Date(ev.properties.$sent_at ?? 0).getTime()),
+          current_url: ev?.properties?.$current_url,
+          realId: ev?.properties?.$pathname?.slice(6),
+          session_id: ev?.properties?.$session_id,
+          time: Math.floor(new Date(ev?.properties?.$sent_at ?? 0).getTime()),
         },
       },
       upsert: true,
@@ -215,29 +210,30 @@ function syncPageLeaveMapper(ev: PostHogEvent) {
       update: {
         $set: {
           distinct_id: ev.distinct_id,
-          time: Math.floor(new Date(ev.properties.$sent_at ?? 0).getTime()),
-          current_url: ev.properties.$current_url,
-          real_id: ev.properties.real_id,
-          project_id: ev.properties.project_id,
-          client_id: ev.properties.client_id,
-          session_duration_seconds: ev.properties.session_duration_seconds,
-          session_duration_formatted: ev.properties.session_duration_formatted,
-          prev_pageview_id: ev.properties.$prev_pageview_id,
-          prev_pageview_pathname: ev.properties.$prev_pageview_pathname,
-          prev_pageview_duration: ev.properties.$prev_pageview_duration,
+          time: Math.floor(new Date(ev?.properties?.$sent_at ?? 0).getTime()),
+          current_url: ev?.properties?.$current_url,
+          real_id: ev?.properties?.real_id,
+          project_id: ev?.properties?.project_id,
+          client_id: ev?.properties?.client_id,
+          session_duration_seconds: ev?.properties?.session_duration_seconds,
+          session_duration_formatted:
+            ev?.properties?.session_duration_formatted,
+          prev_pageview_id: ev?.properties?.$prev_pageview_id,
+          prev_pageview_pathname: ev?.properties?.$prev_pageview_pathname,
+          prev_pageview_duration: ev?.properties?.$prev_pageview_duration,
           prev_pageview_scroll: {
-            last_scroll: ev.properties.$prev_pageview_last_scroll,
-            max_scroll: ev.properties.$prev_pageview_max_scroll,
+            last_scroll: ev?.properties?.$prev_pageview_last_scroll,
+            max_scroll: ev?.properties?.$prev_pageview_max_scroll,
             last_scroll_percentage:
-              ev.properties.$prev_pageview_last_scroll_percentage,
+              ev?.properties?.$prev_pageview_last_scroll_percentage,
             max_scroll_percentage:
-              ev.properties.$prev_pageview_max_scroll_percentage,
+              ev?.properties?.$prev_pageview_max_scroll_percentage,
           },
           session: {
-            id: ev.properties.$session_id,
-            entry_url: ev.properties.$session_entry_url,
-            entry_pathname: ev.properties.$session_entry_pathname,
-            entry_host: ev.properties.$session_entry_host,
+            id: ev?.properties?.$session_id,
+            entry_url: ev?.properties?.$session_entry_url,
+            entry_pathname: ev?.properties?.$session_entry_pathname,
+            entry_host: ev?.properties?.$session_entry_host,
           },
         },
       },
@@ -254,17 +250,19 @@ function syncSlideViewedMapper(ev: PostHogEvent) {
         $set: {
           id: ev.id,
           distinct_id: ev.distinct_id,
-          slide_title: ev.properties.slide_title,
-          real_id: ev.properties.real_id,
-          slide_index: ev.properties.slide_index,
-          view_duration: ev.properties.view_duration,
-          client_id: ev.properties.client_id,
-          slide_id: ev.properties.slide_id,
-          total_slides: ev.properties.total_slides,
-          project_id: ev.properties.project_id,
-          session_duration_seconds: ev.properties.session_duration_seconds,
-          session_duration_formatted: ev.properties.session_duration_formatted,
-          time: Math.floor(new Date(ev.properties.$sent_at ?? 0).getTime()),
+          slide_title: ev?.properties?.slide_title,
+          real_id: ev?.properties?.real_id,
+          slide_index: ev?.properties?.slide_index,
+          view_duration: ev?.properties?.view_duration,
+          client_id: ev?.properties?.client_id,
+          slide_id: ev?.properties?.slide_id,
+          total_slides: ev?.properties?.total_slides,
+          project_id: ev?.properties?.project_id,
+          session_duration_seconds: ev?.properties?.session_duration_seconds,
+          session_duration_formatted:
+            ev?.properties?.session_duration_formatted,
+          time: Math.floor(new Date(ev?.properties?.$sent_at ?? 0).getTime()),
+          duration: ev?.properties?.asset_delay,
         },
       },
       upsert: true,
@@ -358,8 +356,6 @@ function syncZoomInteractionMapper(ev: PostHogEvent) {
     },
   }
 }
-
-//  CHUNKED BULK WRITE (Production Safe)
 type BulkWritableModel = Pick<Model<unknown>, 'bulkWrite'>
 
 async function chunkedBulkWrite<TModel extends BulkWritableModel>(
@@ -382,6 +378,4 @@ async function chunkedBulkWrite<TModel extends BulkWritableModel>(
     await wait(50)
   }
 }
-
-//  💤 WAIT
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
